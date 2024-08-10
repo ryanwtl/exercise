@@ -1,70 +1,53 @@
-import pandas as pd
 import streamlit as st
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
+import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
-import openai  # For generating embeddings (replace with your preferred model)
+from sentence_transformers import SentenceTransformer
 
 openai.api_key =  st.secrets["mykey"]
 
-# Function to load your dataset
+# Load data
+@st.cache_data
 def load_data():
-    # Replace 'your_dataset.csv' with the actual filename
-    data = pd.read_csv("qa_dataset_with_embeddings.csv", sep='\t')
-    return data
+    df = pd.read_csv('/mnt/data/qa_dataset_with_embeddings.csv', on_bad_lines='skip')
+    df['Question_Embedding'] = df['Question_Embedding'].apply(eval).apply(np.array)
+    return df
 
-# Function to preprocess the data (if needed)
-def preprocess_data(data):
-    # Handle missing values, feature scaling, etc.
-    # ...
-    return data
-
-# Function to train the model
-def train_model(X_train, y_train):
-    model = RandomForestClassifier()
-    model.fit(X_train, y_train)
+# Select embedding model
+@st.cache_resource
+def load_model():
+    model = SentenceTransformer('all-MiniLM-L6-v2')
     return model
 
-# Streamlit app
-def main():
-    st.title("Classification Demo")
+# Find the most relevant answer
+def find_answer(user_question, df, model):
+    user_embedding = model.encode([user_question])
+    similarities = cosine_similarity(user_embedding, np.vstack(df['Question_Embedding'].values))
+    max_similarity_idx = np.argmax(similarities)
+    max_similarity_score = similarities[0, max_similarity_idx]
+    
+    threshold = 0.75  # Experiment with this threshold
+    if max_similarity_score > threshold:
+        return df.iloc[max_similarity_idx]['Answer'], max_similarity_score
+    else:
+        return "I apologize, but I don't have information on that topic yet. Could you please ask other questions?", None
 
-    # Load and preprocess data
-    data = load_data()
-    data = preprocess_data(data)
+# Streamlit interface
+st.title("Health Q&A Chatbot")
+st.write("Ask questions about heart, lung, and blood-related health topics.")
 
-    # Split data into features (X) and target (y)
-    X = data.drop('target_column', axis=1)  # Replace 'target_column' 
-    y = data['target_column']
+df = load_data()
+model = load_model()
 
-    # Split data into training and testing sets
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2) 
+user_question = st.text_input("Enter your question here:")
+if st.button("Get Answer"):
+    if user_question:
+        answer, score = find_answer(user_question, df, model)
+        st.write("**Answer:**", answer)
+        if score:
+            st.write("**Similarity Score:**", score)
+    else:
+        st.write("Please enter a question.")
 
-
-    # Train the model
-    model = train_model(X_train, y_train)
-
-    # Make predictions on the test set
-    y_pred = model.predict(X_test)
-
-    # Evaluate the model
-    accuracy = accuracy_score(y_test, y_pred)
-
-    st.write(f"Accuracy: {accuracy}")
-
-    # User input for prediction
-    st.subheader("Predict New Data")
-    new_data = st.text_input("Enter feature values (comma-separated)")
-
-    if st.button("Predict"):
-        try:
-            input_values = [float(x) for x in new_data.split(",")]
-            prediction = model.predict([input_values])
-            st.write(f"Prediction: {prediction[0]}")
-        except ValueError:
-            st.error("Invalid input. Please enter comma-separated numeric values.")
-
-if __name__ == "__main__":
-    main()
+if st.button("Clear"):
+    st.experimental_rerun()
