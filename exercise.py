@@ -1,48 +1,70 @@
 import pandas as pd
-import numpy as np
 import streamlit as st
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
 from sklearn.metrics.pairwise import cosine_similarity
 import openai  # For generating embeddings (replace with your preferred model)
 
 openai.api_key =  st.secrets["mykey"]
 
-df = pd.read_csv("qa_dataset_with_embeddings.csv")
+# Function to load your dataset
+def load_data():
+    # Replace 'your_dataset.csv' with the actual filename
+    data = pd.read_csv("qa_dataset_with_embeddings.csv", sep='\t')
+    return data
 
-embeddings = np.array(df['Question_Embedding'].tolist())
-def get_embedding(text):
-  # Replace with your preferred embedding model
-  response = openai.Embedding.create(
-    input=[text],
-    model="text-embedding-ada-002"
-  )
-  return response['data'][0]['embedding']
-st.title("Smart Health FAQ")
+# Function to preprocess the data (if needed)
+def preprocess_data(data):
+    # Handle missing values, feature scaling, etc.
+    # ...
+    return data
 
-user_question = st.text_input("Ask your health question:")
-answer = st.empty()
+# Function to train the model
+def train_model(X_train, y_train):
+    model = RandomForestClassifier()
+    model.fit(X_train, y_train)
+    return model
 
-if st.button("Submit"):
-  if user_question:
-    user_embedding = get_embedding(user_question)
-    similarities = cosine_similarity(user_embedding.reshape(1, -1), embeddings).flatten()
-    most_similar_index = similarities.argmax()
-    max_similarity = similarities[most_similar_index]
+# Streamlit app
+def main():
+    st.title("Classification Demo")
 
-    similarity_threshold = 0.7  # Adjust as needed
+    # Load and preprocess data
+    data = load_data()
+    data = preprocess_data(data)
 
-    if max_similarity >= similarity_threshold:
-      answer.info(df.loc[most_similar_index, 'Answer'])
-    else:
-      answer.warning("I apologize, but I don't have information on that topic yet. Could you please ask other questions?")
-  else:
-    answer.warning("Please enter a question.")
-st.button("Clear")
-if st.button("Clear"):
-  user_question = ""
-  answer.empty()
-answer.info(f"Similarity: {max_similarity:.2f}\n\n{df.loc[most_similar_index, 'Answer']}")
-answer_rating = st.selectbox("How helpful was the answer?", ["Very Helpful", "Helpful", "Not Helpful"])
-st.header("Common FAQs")
-# Display a list of frequently asked questions
-search_query = st.text_input("Search FAQs:")
-# Filter the dataset based on the search query
+    # Split data into features (X) and target (y)
+    X = data.drop('target_column', axis=1)  # Replace 'target_column' 
+    y = data['target_column']
+
+    # Split data into training and testing sets
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2) 
+
+
+    # Train the model
+    model = train_model(X_train, y_train)
+
+    # Make predictions on the test set
+    y_pred = model.predict(X_test)
+
+    # Evaluate the model
+    accuracy = accuracy_score(y_test, y_pred)
+
+    st.write(f"Accuracy: {accuracy}")
+
+    # User input for prediction
+    st.subheader("Predict New Data")
+    new_data = st.text_input("Enter feature values (comma-separated)")
+
+    if st.button("Predict"):
+        try:
+            input_values = [float(x) for x in new_data.split(",")]
+            prediction = model.predict([input_values])
+            st.write(f"Prediction: {prediction[0]}")
+        except ValueError:
+            st.error("Invalid input. Please enter comma-separated numeric values.")
+
+if __name__ == "__main__":
+    main()
